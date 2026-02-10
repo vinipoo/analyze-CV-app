@@ -30,19 +30,49 @@ export default function CVAdjustmentApp() {
         setError('');
         setResult(null);
 
+        const provider = import.meta.env.VITE_PROVIDER || 'openai';
+        const model = import.meta.env.VITE_MODEL;
+        const endpoint = import.meta.env.VITE_API_ENDPOINT;
+
         try {
+            // Helper to make API calls to different providers
+            const callAI = async (prompt) => {
+                let url = endpoint;
+                let headers = { "Content-Type": "application/json" };
+                let body = {};
+
+                if (provider === 'gemini') {
+                    url = `${endpoint}${apiKey}`;
+                    body = {
+                        contents: [{ parts: [{ text: prompt }] }]
+                    };
+                } else {
+                    headers["Authorization"] = `Bearer ${apiKey}`;
+                    body = {
+                        model: model,
+                        messages: [{ role: "user", content: prompt }]
+                    };
+                }
+
+                const response = await fetch(url, {
+                    method: "POST",
+                    headers: headers,
+                    body: JSON.stringify(body)
+                });
+
+                const data = await response.json();
+
+                if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+
+                if (provider === 'gemini') {
+                    return data.candidates[0].content.parts[0].text;
+                } else {
+                    return data.choices[0].message.content;
+                }
+            };
+
             // Step 1: Analyze fit and extract job details
-            const analysisResponse = await fetch(import.meta.env.VITE_API_ENDPOINT, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${apiKey}`
-                },
-                body: JSON.stringify({
-                    model: import.meta.env.VITE_MODEL,
-                    messages: [{
-                        role: "user",
-                        content: `Analyze this job application fit and extract details.
+            const analysisPrompt = `Analyze this job application fit and extract details.
 
 CV:
 ${cv}
@@ -65,33 +95,14 @@ Respond in JSON format ONLY with:
   "suggestedFileName": "CompanyName_Position_Feb2026.docx"
 }
 
-For salary: estimate based on the CV experience level and Israeli market rates for this role. Return ONLY the number.`
-                    }]
-                })
-            });
+For salary: estimate based on the CV experience level and Israeli market rates for this role. Return ONLY the number.`;
 
-            const analysisData = await analysisResponse.json();
-            if (analysisData.error) throw new Error(analysisData.error.message);
-
-            let analysisText = analysisData.choices[0].message.content;
-
-            // Remove markdown code blocks if present
+            let analysisText = await callAI(analysisPrompt);
             analysisText = analysisText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-
             const analysis = JSON.parse(analysisText);
 
             // Step 2: Adjust CV to match keywords
-            const cvResponse = await fetch(import.meta.env.VITE_API_ENDPOINT, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${apiKey}`
-                },
-                body: JSON.stringify({
-                    model: import.meta.env.VITE_MODEL,
-                    messages: [{
-                        role: "user",
-                        content: `Adjust this CV to match the job description and include these keywords naturally: ${analysis.keywords.join(', ')}
+            const cvPrompt = `Adjust this CV to match the job description and include these keywords naturally: ${analysis.keywords.join(', ')}
 
 Original CV:
 ${cv}
@@ -108,15 +119,9 @@ Requirements:
 - Maintain professional tone
 - Keep all dates and factual information accurate
 
-Return ONLY the adjusted CV text, no preamble or explanation.`
-                    }]
-                })
-            });
+Return ONLY the adjusted CV text, no preamble or explanation.`;
 
-            const cvData = await cvResponse.json();
-            if (cvData.error) throw new Error(cvData.error.message);
-
-            const adjustedCV = cvData.choices[0].message.content.trim();
+            const adjustedCV = (await callAI(cvPrompt)).trim();
 
             setResult({
                 ...analysis,
@@ -175,9 +180,9 @@ Return ONLY the adjusted CV text, no preamble or explanation.`
                 <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
                     <div className="flex items-center gap-2 mb-4">
                         <Key className="w-5 h-5 text-indigo-600" />
-                        <h2 className="text-xl font-semibold text-gray-800">OpenAI API Key</h2>
+                        <h2 className="text-xl font-semibold text-gray-800">Gemini API Key</h2>
                     </div>
-                    <p className="text-sm text-gray-600 mb-2">Required for analysis. Get one at <a href="https://platform.openai.com/api-keys" target="_blank" className="text-indigo-600 underline">OpenAI Platform</a>.</p>
+                    <p className="text-sm text-gray-600 mb-2">Required for analysis. Get one at <a href="https://aistudio.google.com/app/apikey" target="_blank" className="text-indigo-600 underline">Google AI Studio</a>.</p>
                     <input
                         type="password"
                         className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
