@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { Upload, FileText, Briefcase, AlertCircle, CheckCircle, Download, Loader2, Key } from 'lucide-react';
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export default function CVAdjustmentApp() {
-    const [apiKey, setApiKey] = useState('');
+    const [apiKey, setApiKey] = useState(import.meta.env.VITE_GEMINI_API_KEY || '');
     const [cv, setCV] = useState('');
     const [jobDescription, setJobDescription] = useState('');
     const [loading, setLoading] = useState(false);
@@ -31,42 +32,31 @@ export default function CVAdjustmentApp() {
         setResult(null);
 
         const provider = import.meta.env.VITE_PROVIDER || 'openai';
-        const model = import.meta.env.VITE_MODEL;
-        const endpoint = import.meta.env.VITE_API_ENDPOINT;
+        const modelName = import.meta.env.VITE_MODEL || 'gemini-1.5-flash';
 
         try {
-            // Helper to make API calls to different providers
             const callAI = async (prompt) => {
-                let url = endpoint;
-                let headers = { "Content-Type": "application/json" };
-                let body = {};
-
                 if (provider === 'gemini') {
-                    url = `${endpoint}${apiKey}`;
-                    body = {
-                        contents: [{ parts: [{ text: prompt }] }]
-                    };
+                    const genAI = new GoogleGenerativeAI(apiKey);
+                    const model = genAI.getGenerativeModel({ model: modelName });
+
+                    const result = await model.generateContent(prompt);
+                    const response = await result.response;
+                    return response.text();
                 } else {
-                    headers["Authorization"] = `Bearer ${apiKey}`;
-                    body = {
-                        model: model,
-                        messages: [{ role: "user", content: prompt }]
-                    };
-                }
-
-                const response = await fetch(url, {
-                    method: "POST",
-                    headers: headers,
-                    body: JSON.stringify(body)
-                });
-
-                const data = await response.json();
-
-                if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
-
-                if (provider === 'gemini') {
-                    return data.candidates[0].content.parts[0].text;
-                } else {
+                    const response = await fetch(import.meta.env.VITE_API_ENDPOINT, {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            "Authorization": `Bearer ${apiKey}`
+                        },
+                        body: JSON.stringify({
+                            model: modelName,
+                            messages: [{ role: "user", content: prompt }]
+                        })
+                    });
+                    const data = await response.json();
+                    if (data.error) throw new Error(data.error.message);
                     return data.choices[0].message.content;
                 }
             };
